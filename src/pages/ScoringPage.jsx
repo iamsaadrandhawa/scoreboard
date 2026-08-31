@@ -217,24 +217,55 @@ function MatchStartPanel({ tournament, match, patch }) {
 
 function LiveScoringPanel({ tournament, match, patch, onBack, broadcast, setBroadcast, broadcastLoading }) {
   const inningsIdx = match.currentInnings;
-  const innings = match.innings[inningsIdx];
-  const battingTeam = tournament.teams.find((t) => t.id === innings.battingTeamId);
-  const bowlingTeam = tournament.teams.find((t) => t.id === innings.bowlingTeamId);
-  const stats = computeInningsStats(innings, tournament.teams);
+  let innings = match.innings[inningsIdx];
+  
+  // Recovery: If innings is missing but the match is live, try to reconstruct it
+  if (!innings && match.status === 'live') {
+    // If second innings is missing, we might need to reconstruct it from the first innings
+    if (inningsIdx === 1 && match.innings[0]) {
+      // Reconstruct the second innings from the first innings data
+      const firstInnings = match.innings[0];
+      const battingTeamId = firstInnings.bowlingTeamId;
+      const bowlingTeamId = firstInnings.battingTeamId;
+      const target = firstInnings.totalRuns + 1;
+      
+      // Create the innings in memory
+      match.innings[1] = {
+        id: uid('innings'),
+        matchId: match.id,
+        inningsNum: 1,
+        battingTeamId: battingTeamId,
+        bowlingTeamId: bowlingTeamId,
+        balls: [],
+        currentStrikerId: null,
+        currentNonStrikerId: null,
+        currentBowlerId: null,
+        previousBowlerId: null,
+        isComplete: false,
+        target: target,
+        runAdjustment: 0,
+        totalRuns: 0,
+        totalWickets: 0,
+        validBalls: 0,
+      };
+      innings = match.innings[1];
+      
+      // Patch the tournament to save this reconstruction
+      patch((t) => {
+        const m = t.matches.find((x) => x.id === match.id);
+        m.innings[1] = match.innings[1];
+        return t;
+      });
+    }
+  }
 
+  // Hooks must run unconditionally on every render, so these are declared
+  // before any early return, and guarded internally against `innings`
+  // being missing.
   const [openBatsmanPicker, setOpenBatsmanPicker] = useState(null);
   const [openBowlerPicker, setOpenBowlerPicker] = useState(false);
   const [wicketModal, setWicketModal] = useState(false);
   const [pendingExtra, setPendingExtra] = useState(null);
-
-  const needsStriker = !innings.currentStrikerId;
-  const needsNonStriker = !innings.currentNonStrikerId;
-  const needsBowler = !innings.currentBowlerId;
-
-  const target = innings.target;
-  const isSecondInnings = inningsIdx === 1;
-  const runsNeeded = target ? target - stats.totalRuns : null;
-  const ballsLeft = match.oversLimit * 6 - stats.validBalls;
 
   useEffect(() => {
     window.__ct_setMotm = (pid) => {
@@ -246,6 +277,39 @@ function LiveScoringPanel({ tournament, match, patch, onBack, broadcast, setBroa
     };
     return () => { window.__ct_setMotm = null; };
   }, [patch, match.id]);
+
+  // Defensive guard: this should never happen once the save/load path is
+  // consistent, but if it ever does (partial save, manual DB edit, a bad
+  // reload mid-write), show a recoverable message instead of crashing
+  // the whole app with "Cannot read properties of undefined".
+  if (!innings) {
+    return (
+      <div className="ct-stack">
+        <button className="ct-btn ct-btn-ghost ct-btn-sm" onClick={onBack}>
+          <ChevronLeft size={15} /> Matches
+        </button>
+        <div className="ct-card ct-warning-note">
+          <AlertTriangle size={15} />
+          {' '}This match is marked as on innings {inningsIdx + 1}, but that innings hasn't
+          been saved yet. Try reloading the page. If this keeps happening, this match's
+          data may need a manual reset (see console/DB for match id {match.id}).
+        </div>
+      </div>
+    );
+  }
+
+  const battingTeam = tournament.teams.find((t) => t.id === innings.battingTeamId);
+  const bowlingTeam = tournament.teams.find((t) => t.id === innings.bowlingTeamId);
+  const stats = computeInningsStats(innings, tournament.teams);
+
+  const needsStriker = !innings.currentStrikerId;
+  const needsNonStriker = !innings.currentNonStrikerId;
+  const needsBowler = !innings.currentBowlerId;
+
+  const target = innings.target;
+  const isSecondInnings = inningsIdx === 1;
+  const runsNeeded = target ? target - stats.totalRuns : null;
+  const ballsLeft = match.oversLimit * 6 - stats.validBalls;
 
   const commitBall = (ballPatch) => {
     patch((t) => {
