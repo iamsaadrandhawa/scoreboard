@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabaseClient';
 // DB <-> App mappers
 // ─────────────────────────────────────────────────────────
 
-const mapTeamFromDB = (team) => ({
+export const mapTeamFromDB = (team) => ({
   id: team.id,
   name: team.name,
   short: team.short_name,
@@ -18,7 +18,7 @@ const mapTeamFromDB = (team) => ({
   players: team.players || [],
 });
 
-const mapPlayerFromDB = (player) => ({
+export const mapPlayerFromDB = (player) => ({
   id: player.id,
   teamId: player.team_id,
   name: player.name,
@@ -26,7 +26,7 @@ const mapPlayerFromDB = (player) => ({
   photo: player.photo_url,
 });
 
-const mapMatchFromDB = (match) => ({
+export const mapMatchFromDB = (match) => ({
   id: match.id,
   tournamentId: match.tournament_id,
   teamAId: match.team_a_id,
@@ -44,14 +44,20 @@ const mapMatchFromDB = (match) => ({
   tossWinner: match.toss_winner_id,
   tossChoice: match.toss_choice,
   currentInnings: match.current_innings,
+  result: match.result_type ? {
+    type: match.result_type,
+    winnerId: match.winner_id,
+    summary: match.summary,
+  } : null,
   resultType: match.result_type,
   winnerId: match.winner_id,
   summary: match.summary,
   motmId: match.motm_id,
+  playingXI: match.playing_xi || null,
   innings: match.innings || [],
 });
 
-const mapInningsFromDB = (innings) => ({
+export const mapInningsFromDB = (innings) => ({
   id: innings.id,
   matchId: innings.match_id,
   inningsNum: innings.innings_num,
@@ -67,7 +73,7 @@ const mapInningsFromDB = (innings) => ({
   balls: innings.balls || [],
 });
 
-const mapBallFromDB = (ball) => ({
+export const mapBallFromDB = (ball) => ({
   id: ball.id,
   inningsId: ball.innings_id,
   ballIndex: ball.ball_index,
@@ -135,6 +141,7 @@ const mapMatchToDB = (match, tournamentId, teamsById = {}) => {
     motm_id: match.motmId || null,
     stage: match.stage || null,
     current_innings: match.currentInnings || 0,
+    playing_xi: match.playingXI || null,
     updated_at: new Date().toISOString(),
   };
 };
@@ -239,7 +246,7 @@ async function deleteMissing(table, parentCol, parentId, keepIds) {
   if (keepIds && keepIds.length > 0) {
     const validIds = keepIds.filter(id => id != null);
     if (validIds.length > 0) {
-      deleteQuery = deleteQuery.not('id', 'in', `(${validIds.map(id => `'${id}'`).join(',')})`);
+      deleteQuery = deleteQuery.not('id', 'in', validIds);
     }
   }
   

@@ -67,9 +67,16 @@ export const OVERLAY_LAYERS = [
   { id: 'upcoming', label: 'Upcoming Matches', icon: '📅' },
 ];
 
-// Deep clone
-export const structuredClone = (obj) => {
-  try { return structuredClone(obj); } catch (e) { return JSON.parse(JSON.stringify(obj)); }
+// Deep clone — use the native built-in when available, fall back to JSON for older runtimes
+export const deepClone = (obj) => {
+  try {
+    if (typeof window !== 'undefined' && typeof window.structuredClone === 'function') {
+      return window.structuredClone(obj);
+    }
+  } catch (e) {
+    // fall through to JSON clone
+  }
+  return JSON.parse(JSON.stringify(obj));
 };
 
 // Round-robin generator
@@ -115,13 +122,20 @@ export const defaultBroadcastState = () => {
   return { layers, matchId: null, lineupTeamId: null, showCaptainPhotos: false };
 };
 
-// Normalize broadcast layers
+// Normalize broadcast layers — always return a full object with every OVERLAY_LAYERS key
+// so toggling any layer never crashes on undefined
 export const normalizeBroadcastLayers = (broadcast) => {
-  if (broadcast?.layers) return broadcast.layers;
   const base = defaultBroadcastState().layers;
+  if (broadcast?.layers && typeof broadcast.layers === 'object') {
+    Object.keys(base).forEach((key) => {
+      if (key in broadcast.layers) {
+        base[key] = !!broadcast.layers[key];
+      }
+    });
+  }
   if (broadcast?.scene) {
     if (broadcast.scene === 'none') base.bug = false;
-    else base[broadcast.scene] = true;
+    else if (broadcast.scene in base) base[broadcast.scene] = true;
   }
   return base;
 };
